@@ -1,49 +1,8 @@
 'use client'
 import { useState, useEffect, useRef, useCallback, use } from "react";
 import "./ModeratorDashboard.css";
+import socket from "@/lib/socket";
 
-const SITUATION_TYPES = ["Spam Campaign","Hate Campaign","Misinformation","Coordinated Harassment","Phishing Ring","Bot Network","CSAM Signal","Radicalization Thread"];
-
-const ALERT_MESSAGES = {
-  "Spam Campaign": "AI detected 47 near-identical messages sent across 12 channels within 8 minutes. Message fingerprints share 94% structural similarity.",
-  "Hate Campaign": "Coordinated slur deployment detected. 6 accounts posting synchronized hate speech targeting a specific ethnic group. NLP confidence: 98.2%.",
-  "Misinformation": "Viral false claim about election results being amplified by a cluster of accounts created within the same 2-hour window.",
-  "Coordinated Harassment": "Personal information of a user being shared across accounts with increasing frequency. 11 unique users involved in targeted pile-on.",
-  "Phishing Ring": "Lookalike domain links being rotated across accounts to evade URL filters. Credential harvesting pattern confirmed.",
-  "Bot Network": "Abnormal behavioral signatures: sub-100ms response times, 24/7 activity, identical device fingerprints across 8 accounts.",
-  "CSAM Signal": "Image hash match against NCMEC database. Immediate escalation required. Zero tolerance protocol activated.",
-  "Radicalization Thread": "Progressive ideological escalation detected over 72hrs. User cluster migrating from mainstream to extremist content.",
-};
-
-const generateUsers = (count) =>
-  Array.from({ length: count }, () => ({
-    id: "usr_" + Math.random().toString(36).slice(2, 8),
-    name: ["shadow_echo","void_signal","neon_flux","null_byte","proxy_ghost","dark_node","anon_wave","cipher_run","ghost_link","bit_drift"][Math.floor(Math.random() * 10)],
-  }));
-
-const generateMessages = (type) => {
-  const pools = {
-    "Spam Campaign": ["INSANE DEAL ENDS TONIGHT bit.ly/xr99k","FREE CRYPTO just click here NOW!!","You have been selected! Claim your prize","Make $5000/day from home, no experience needed","URGENT: Your account will be deleted unless you verify"],
-    "Hate Campaign": ["[REDACTED - hate speech]","They don't belong here. Never did.","[REDACTED - ethnic slur]","Share this everywhere before they delete it","These people are the problem with society"],
-    "Misinformation": ["BREAKING: The election was stolen. Here's the proof [fake doc]","Mainstream media won't show you this.","My uncle works at CDC - the vaccine contains tracking chips","Official-looking graphic with fabricated statistics attached","Thread: Everything you were not supposed to know"],
-  };
-  return pools[type] || ["Message cluster 1 - similarity 97.3%","Message cluster 2 - similarity 94.8%","Forwarded 847 times in past 3 hours","Account created 6 days ago, 0 prior posts","IP geolocation anomaly detected"];
-};
-
-const SEED_DATA = Array.from({ length: 14 }, (_, i) => {
-  const type = SITUATION_TYPES[i % SITUATION_TYPES.length];
-  const risk = Math.floor(Math.random() * 100);
-  return {
-    id: "sit_" + Math.random().toString(36).slice(2, 10),
-    type, risk,
-    users: generateUsers(Math.floor(Math.random() * 8) + 2),
-    alert: ALERT_MESSAGES[type],
-    messages: generateMessages(type),
-    timestamp: new Date(Date.now() - Math.floor(Math.random() * 3600000)).toISOString(),
-    similarity: Array.from({ length: 5 }, () => Math.floor(Math.random() * 40) + 60),
-    newFlag: false,
-  };
-}).sort((a, b) => b.risk - a.risk);
 
 const riskColor = (risk) => {
   if (risk >= 70) return { bg: "#FF2D55", text: "#FF2D55", label: "HIGH", tier: "high" };
@@ -165,14 +124,8 @@ export default function ModeratorDashboard() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("risk-desc");
   const [toasts, setToasts] = useState([]);
-  const intervalRef = useRef(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const addToast = useCallback((message) => {
+  const [, setMounted] = useState(false);
+    const addToast = useCallback((message) => {
     const id = ++toastId;
     setToasts((prev) => [...prev, { id, message }]);
     setTimeout(() => {
@@ -182,31 +135,60 @@ export default function ModeratorDashboard() {
   }, []);
 
   useEffect(() => {
-    setSituations(SEED_DATA);
+    setMounted(true);
   }, []);
 
-  useEffect(() => {
-    intervalRef.current = setInterval(() => {
-      if (Math.random() < 0.3) {
-        const type = SITUATION_TYPES[Math.floor(Math.random() * SITUATION_TYPES.length)];
-        const risk = Math.floor(Math.random() * 100);
-        const newSit = {
-          id: "sit_" + Math.random().toString(36).slice(2, 10),
-          type, risk,
-          users: generateUsers(Math.floor(Math.random() * 6) + 2),
-          alert: ALERT_MESSAGES[type],
-          messages: generateMessages(type),
-          timestamp: new Date().toISOString(),
-          similarity: Array.from({ length: 5 }, () => Math.floor(Math.random() * 40) + 60),
-          newFlag: true,
-        };
-        setSituations((prev) => [newSit, ...prev.slice(0, 19)]);
-        addToast("New " + type + " detected - risk " + risk);
-        setTimeout(() => setSituations((prev) => prev.map((s) => (s.id === newSit.id ? { ...s, newFlag: false } : s))), 3000);
+ useEffect(() => {
+  socket.connect();
+
+  socket.on("connect", () => {
+    console.log("✅ Connected to backend");
+
+    // ✅ JOIN ROOM AFTER CONNECT
+    socket.emit("join_dashboard");
+  });
+
+  socket.on("moderation_event", (data) => {
+    console.log("🔥 RECEIVED:", data);
+
+    const newSituation = {
+      id: data.clusterId,
+      type: data.type,
+      risk: Math.floor(data.risk * 100),
+
+      users: data.users.map((u) => ({
+        id: u,
+        name: u,
+      })),
+
+      alert: `${data.count} similar messages across ${data.users.length} users`,
+      messages: data.messages,
+      timestamp: data.timestamp,
+      similarity: [85, 90, 88, 92, 87],
+      newFlag: true,
+    };
+
+    setSituations((prev) => {
+      const index = prev.findIndex((s) => s.id === data.clusterId);
+
+      if (index !== -1) {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], ...newSituation };
+        return updated;
       }
-    }, 8000);
-    return () => clearInterval(intervalRef.current);
-  }, [addToast]);
+
+      addToast(`${newSituation.type} detected - risk ${newSituation.risk}`);
+      return [newSituation, ...prev.slice(0, 20)];
+    });
+  });
+
+  return () => {
+    socket.off("connect");
+    socket.off("moderation_event");
+    socket.disconnect();
+  };
+}, [addToast]);
+
 
   const handleAction = useCallback((id, action) => {
     if (action !== "ignore") setTimeout(() => setSituations((prev) => prev.filter((s) => s.id !== id)), 1200);
