@@ -49,6 +49,9 @@ function SituationCard({ situation, onAction, onToast }) {
           <div className="card-type-row">
             <span className="card-type">{situation.type}</span>
             {situation.newFlag && <span className="new-badge">NEW</span>}
+              <div style={{ fontSize: "11px", opacity: 0.7 }}>
+    #{situation.roomId}
+  </div>
           </div>
           <div className="card-timestamp">{timeAgo(situation.timestamp)}</div>
         </div>
@@ -99,6 +102,55 @@ function SituationCard({ situation, onAction, onToast }) {
               </div>
             ))}
           </div>
+          {/* 🔥 USER PROFILE SECTION */}
+{ situation.userProfile && (
+  <>
+    <p className="expanded-section-title">User Profile</p>
+
+    <div style={{
+      fontSize: "12px",
+      marginBottom: "12px",
+      background: "#111",
+      padding: "10px",
+      borderRadius: "8px",
+      border: "1px solid #333"
+    }}>
+      <div><b>User:</b> {situation.userProfile.username}</div>
+
+      <div><b>Messages:</b> {situation.userProfile.messageCount}</div>
+
+      <div>
+        <b>Spam Rate:</b>{" "}
+        {((situation.userProfile?.spamRate || 0 )* 100).toFixed(1)}%
+      </div>
+
+      <div>
+        <b>Toxic Rate:</b>{" "}
+        {((situation.userProfile?.toxicRate || 0) * 100).toFixed(1)}%
+      </div>
+
+      <div>
+        <b>Risk:</b>{" "}
+        {((situation.userProfile.riskScore || 0)* 100).toFixed(0)}%
+      </div>
+
+      <div>
+        <b>Status:</b>{" "}
+        <span style={{
+          color:
+            situation.userProfile.riskScore > 0.7
+              ? "#FF2D55"
+              : situation.userProfile.riskScore > 0.4
+              ? "#FF9500"
+              : "#30D158",
+          fontWeight : "bold"
+        }}>
+          {situation.userProfile.flag}
+        </span>
+      </div>
+    </div>
+  </>
+)}
           <div className="action-row">
             <button className={"action-btn delete" + (resolved ? " resolved" : "")} onClick={(e) => handleAction(e, "delete")} disabled={!!resolved}>Delete</button>
             <button className={"action-btn ban" + (resolved ? " resolved" : "")} onClick={(e) => handleAction(e, "ban")} disabled={!!resolved}>Ban Users</button>
@@ -152,21 +204,28 @@ export default function ModeratorDashboard() {
     console.log("🔥 RECEIVED:", data);
 
     const newSituation = {
-      id: data.clusterId,
-      type: data.type,
-      risk: Math.floor(data.risk * 100),
+  id: data.clusterId,
+  roomId: data.roomId || "unknown",
 
-      users: data.users.map((u) => ({
-        id: u,
-        name: u,
-      })),
+  type: data.type,
+  risk: Math.floor(data.risk * 100),
 
-      alert: `${data.count} similar messages across ${data.users.length} users`,
-      messages: data.messages,
-      timestamp: data.timestamp,
-      similarity: [85, 90, 88, 92, 87],
-      newFlag: true,
-    };
+  users: data.users.map((u) => ({
+    id: u,
+    name: u,
+  })),
+
+  alert: `[${data.roomId || "unknown"}] ${data.count} similar messages across ${data.users.length} users`,
+
+  messages: data.messages,
+  timestamp: data.timestamp,
+  similarity: [85, 90, 88, 92, 87],
+  newFlag: true,
+
+  // 🔥 ADD USER PROFILE
+  userProfile: data.userProfile || null,
+};
+    
 
     setSituations((prev) => {
       const index = prev.findIndex((s) => s.id === data.clusterId);
