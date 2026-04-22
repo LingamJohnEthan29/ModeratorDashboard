@@ -33,8 +33,15 @@ function SituationCard({ situation, onAction, onToast }) {
   const handleAction = (e, action) => {
     e.stopPropagation();
     setResolved(action);
+    if (action === "ban"){
+      socket.emit("ban_user",{
+        username:situation.userProfile.username,
+      });
+    }
     onAction(situation.id, action);
-    const msgs = { delete: situation.messages.length + " messages deleted", ban: situation.users.length + " users banned", ignore: "Situation marked as ignored" };
+    const msgs = { delete: situation.messages.length + " messages deleted",
+      ban: situation.users.length + " users banned", 
+      ignore: "Situation marked as ignored" };
     onToast(msgs[action]);
   };
 
@@ -191,17 +198,19 @@ export default function ModeratorDashboard() {
   }, []);
 
  useEffect(() => {
+  socket.auth = { token: "admin-secret"  };
+  
   socket.connect();
 
   socket.on("connect", () => {
-    console.log("✅ Connected to backend");
+    console.log(" Connected to backend");
 
-    // ✅ JOIN ROOM AFTER CONNECT
+    //  JOIN ROOM AFTER CONNECT
     socket.emit("join_dashboard");
   });
 
   socket.on("moderation_event", (data) => {
-    console.log("🔥 RECEIVED:", data);
+    console.log("RECEIVED:", data);
 
     const newSituation = {
   id: data.clusterId,
